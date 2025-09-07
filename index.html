@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku Solver</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #result {
+            margin-top: 20px;
+            text-align: center;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sudoku Solver</h1>
+    <form id="upload-form">
+        <input type="file" id="file-input" name="file">
+        <button type="submit">Solve</button>
+    </form>
+    <div id="result"></div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const resultDiv = document.getElementById('result');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData();
+            const fileInput = document.getElementById('file-input');
+            formData.append('file', fileInput.files[0]);
+
+            resultDiv.innerHTML = 'Solving...';
+
+            try {
+                // IMPORTANT: Replace this with the actual URL of your deployed backend
+                const backendUrl = 'https://your-backend-url.hf.space/solve/';
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    resultDiv.innerHTML = `
+                        <h2>${result.message}</h2>
+                        <img src="data:image/png;base64,${result.image}" alt="Solved Sudoku">
+                    `;
+                } else {
+                    resultDiv.innerHTML = 'Error solving puzzle.';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = 'An error occurred.';
+            }
+        });
+    </script>
+</body>
+</html>

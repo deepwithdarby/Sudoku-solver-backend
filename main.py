@@ -1,8 +1,25 @@
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
 import numpy as np
 import cv2
-from PIL import Image
-import gradio as gr
 import sudoku
+import io
+import base64
+
+app = FastAPI()
+
+# Add CORS middleware to allow requests from different origins
+# In production, you should restrict this to your frontend's domain for security
+# e.g., origins=["https://your-frontend-domain.vercel.app"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 def preprocess_image(cell_image: np.ndarray):
     # Resize to 28x28
@@ -41,8 +58,18 @@ def recognize_digits_onnx(grid_image: np.ndarray, onnx_model_path: str) -> np.nd
                 arr[row, col] = predicted_digit
     return arr
 
-def sudoku_solver(sudoku_image: str):
+def create_sorry_image(text):
+    sorry_img = np.zeros((450, 450, 3), np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(sorry_img, text, (50, 225), font, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    return Image.fromarray(cv2.cvtColor(sorry_img, cv2.COLOR_BGR2RGB))
+
+
+def sudoku_solver(image_bytes: bytes):
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    sudoku_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     sudoku_grid = sudoku.extract_grid(sudoku_image, size=9*50)
+
     if sudoku_grid is not None:
         puzzle = recognize_digits_onnx(sudoku_grid, 'digits.onnx')
         puzzle_copy = puzzle.copy()
@@ -53,27 +80,24 @@ def sudoku_solver(sudoku_image: str):
             sudoku_grid = Image.fromarray(sudoku_grid)
             return sudoku_grid, 'Puzzle Solved!'
         else:
-            sorry = Image.open('images/sorry.jpg')
+            sorry = create_sorry_image("Puzzle is unsolvable!")
             return sorry, "Puzzle is unsolvable!"
     else:
-        sorry = Image.open('images/sorry.jpg')
+        sorry = create_sorry_image("Can't extract sudoku grid!")
         return sorry, "Can't extract sudoku grid!"
 
-examples = [
-    ['images/example_01.jpg'],
-    ['images/example_02.jpg'],
-    ['images/example_03.jpg'],
-    ['images/example_04.jpg'],
-    ['images/example_05.jpg'],
-    ['images/example_06.jpg']
-]
+@app.post("/solve/")
+async def solve_sudoku(file: UploadFile = File(...)):
+    image_bytes = await file.read()
 
-app = gr.Interface(
-    fn=sudoku_solver,
-    inputs=['image'],
-    outputs=['image', 'text'],
-    title='\U0001F439 Sudoku Solver \U0001F439',
-    examples=examples
-)
+    solved_image, message = sudoku_solver(image_bytes)
 
-app.launch()
+    buffered = io.BytesIO()
+    solved_image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    return JSONResponse(content={"image": img_str, "message": message})
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
